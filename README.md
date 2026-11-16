@@ -2,7 +2,11 @@
 
 [![ci](https://github.com/nerminekabadou/AI-Video-Transcription/actions/workflows/ci.yml/badge.svg)](https://github.com/nerminekabadou/AI-Video-Transcription/actions/workflows/ci.yml)
 
+**[▶ Try it live](https://ai-video-transcription.onrender.com)**: no sign-up, and a sample video is included. *The free server sleeps when idle, so the first visit can take about a minute to wake up.*
+
 Upload a video, get its transcript, then ask questions about what was said. A Next.js frontend talks to a FastAPI backend. The backend extracts the audio with FFmpeg, transcribes it with AssemblyAI and answers questions with an open LLM served by the Groq API.
+
+<img src="docs/demo.png" width="640" alt="The app after processing the sample video and answering a question about it">
 
 ## Features
 
