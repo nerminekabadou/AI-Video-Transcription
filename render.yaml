@@ -1,0 +1,17 @@
+# Render Blueprint for the live demo (free web service, Docker).
+# API keys are entered in the Render dashboard, never committed.
+services:
+  - type: web
+    name: ai-video-transcription
+    runtime: docker
+    plan: free
+    dockerfilePath: ./deploy/Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    envVars:
+      - key: ASSEMBLYAI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: MAX_UPLOAD_MB
+        value: "25"

@@ -46,7 +46,9 @@ const Loader2 = ({ className = "w-5 h-5 animate-spin" }) => (
   </svg>
 );
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// An empty NEXT_PUBLIC_API_URL means "same origin" (used by the live demo build).
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+const SAMPLE_VIDEO = process.env.NEXT_PUBLIC_SAMPLE_VIDEO;
 
 export default function Home() {
   const [video, setVideo] = useState(null);
@@ -82,6 +84,16 @@ export default function Home() {
     e.preventDefault();
     setIsDragging(false);
     selectFile(e.dataTransfer.files[0]);
+  };
+
+  const useSampleVideo = async () => {
+    try {
+      setError('');
+      const blob = await (await fetch(SAMPLE_VIDEO)).blob();
+      selectFile(new File([blob], 'sample-machine-learning.mp4', { type: 'video/mp4' }));
+    } catch {
+      setError('Could not load the sample video');
+    }
   };
 
   const handleUpload = async () => {
@@ -282,6 +294,15 @@ export default function Home() {
                   </div>
                 )}
               </div>
+
+              {SAMPLE_VIDEO && !video && (
+                <button
+                  onClick={useSampleVideo}
+                  className="w-full text-sm text-purple-200 hover:text-white underline underline-offset-4"
+                >
+                  No video at hand? Try a 2-minute sample video
+                </button>
+              )}
 
               {/* Upload Button */}
               <button

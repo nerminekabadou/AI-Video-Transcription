@@ -1,5 +1,6 @@
 from fastapi import FastAPI, File, UploadFile, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import os
 import re
 import uuid
@@ -252,6 +253,13 @@ def ask_question(request: AskRequest):
         raise HTTPException(status_code=502, detail=f"Groq API error ({response.status_code}): {response.text}")
 
     return {"answer": response.json()["choices"][0]["message"]["content"]}
+
+
+# Live demo: serve the sample video and the static frontend build from the same origin.
+if os.getenv("SAMPLES_DIR"):
+    app.mount("/samples", StaticFiles(directory=os.getenv("SAMPLES_DIR")), name="samples")
+if os.getenv("STATIC_DIR"):
+    app.mount("/", StaticFiles(directory=os.getenv("STATIC_DIR"), html=True), name="frontend")
 
 
 if __name__ == "__main__":
