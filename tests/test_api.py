@@ -52,3 +52,37 @@ def test_ask_requires_groq_key(client, monkeypatch):
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     response = client.post("/ask", json={"transcript": "Hello", "question": "Why?"})
     assert response.status_code == 500
+
+
+class FakeResponse:
+    def __init__(self, payload, status=200):
+        self._payload, self.status_code = payload, status
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        pass
+
+
+def test_groq_model_falls_back_to_an_available_model(monkeypatch):
+    monkeypatch.setattr(main, "_resolved_groq_model", None)
+    monkeypatch.setenv("GROQ_MODEL", "retired-model")
+    models = {"data": [{"id": "whisper-large-v3"}, {"id": "qwen/qwen3-32b"}]}
+    monkeypatch.setattr(main.requests, "get", lambda *a, **k: FakeResponse(models))
+    assert main.resolve_groq_model("key") == "qwen/qwen3-32b"
+
+
+def test_ask_uses_the_resolved_model(client, monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "key")
+    monkeypatch.setattr(main, "_resolved_groq_model", "some-model")
+    sent = {}
+
+    def fake_post(url, headers, json, timeout):
+        sent.update(json)
+        return FakeResponse({"choices": [{"message": {"content": "It is about ML."}}]})
+
+    monkeypatch.setattr(main.requests, "post", fake_post)
+    response = client.post("/ask", json={"transcript": "Hello", "question": "Why?"})
+    assert response.json() == {"answer": "It is about ML."}
+    assert sent["model"] == "some-model"

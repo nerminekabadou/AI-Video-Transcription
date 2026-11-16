@@ -2,7 +2,7 @@
 
 [![ci](https://github.com/nerminekabadou/AI-Video-Transcription/actions/workflows/ci.yml/badge.svg)](https://github.com/nerminekabadou/AI-Video-Transcription/actions/workflows/ci.yml)
 
-Upload a video, get its transcript, then ask questions about what was said. A Next.js frontend talks to a FastAPI backend. The backend extracts the audio with FFmpeg, transcribes it with AssemblyAI and answers questions with Llama 3.3 70B through the Groq API.
+Upload a video, get its transcript, then ask questions about what was said. A Next.js frontend talks to a FastAPI backend. The backend extracts the audio with FFmpeg, transcribes it with AssemblyAI and answers questions with an open LLM served by the Groq API.
 
 ## Features
 
@@ -19,7 +19,7 @@ Next.js (app/page.js)                 FastAPI (main.py)
 ──────────────────────               ─────────────────────────────────────────────
 POST /upload (video)   ───────────▶  stream to temp file ─▶ background task:
 GET  /status/{jobId}   ◀── poll ───     FFmpeg → WAV ─▶ AssemblyAI → transcript
-POST /ask {transcript, question} ─▶  Groq chat completion (Llama 3.3 70B) ─▶ answer
+POST /ask {transcript, question} ─▶  Groq chat completion (open LLM) ────▶ answer
 ```
 
 ## Tech stack
@@ -28,7 +28,7 @@ POST /ask {transcript, question} ─▶  Groq chat completion (Llama 3.3 70B) �
 |----------|--------------|
 | Frontend | Next.js 16, React 19, Tailwind CSS 4 |
 | Backend  | Python, FastAPI, Pydantic, FFmpeg |
-| AI       | AssemblyAI (speech-to-text), Groq API, Llama 3.3 70B |
+| AI       | AssemblyAI (speech-to-text), Groq API (GPT-OSS / Llama) |
 | Quality  | pytest, ESLint, GitHub Actions |
 
 ## Getting started
@@ -59,7 +59,7 @@ cp .env.example .env               # then add your API keys
 |----------|----------|-------------|
 | `ASSEMBLYAI_API_KEY` | yes | AssemblyAI key for transcription |
 | `GROQ_API_KEY` | yes | Groq key for question answering |
-| `GROQ_MODEL` | no | Defaults to `llama-3.3-70b-versatile` |
+| `GROQ_MODEL` | no | Preferred model. If it isn't set or is no longer available, the backend picks the first model your Groq account can use from a built-in preference list (Groq retires models regularly) |
 | `MAX_UPLOAD_MB` | no | Maximum upload size, default `200` |
 | `FRONTEND_ORIGIN` | no | Allowed CORS origin, default `http://localhost:3000` |
 | `FFMPEG_PATH` | no | Path to `ffmpeg` if it isn't on your `PATH` (forward slashes work on Windows, e.g. `C:/ffmpeg/bin/ffmpeg.exe`) |

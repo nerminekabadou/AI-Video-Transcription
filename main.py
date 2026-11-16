@@ -41,7 +41,17 @@ MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 CHUNK_SIZE = 1024 * 1024
 UPLOAD_DIR = tempfile.gettempdir()
 
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+# Groq retires models regularly, so the model is resolved at runtime: GROQ_MODEL if set
+# and available, otherwise the first available model from this preference list.
+GROQ_PREFERRED_MODELS = [
+    "openai/gpt-oss-120b",
+    "llama-3.3-70b-versatile",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "qwen/qwen3-32b",
+    "llama-3.1-8b-instant",
+]
+_NON_CHAT_MODELS = ("whisper", "guard", "tts", "playai", "orpheus", "compound")
+_resolved_groq_model = None
 MAX_TRANSCRIPT_CHARS = 4000
 
 
@@ -210,6 +220,28 @@ async def get_status(job_id: str):
     
     return job_status[job_id]
 
+def resolve_groq_model(api_key: str) -> str:
+    """Pick a chat model that the Groq account can use right now (cached)."""
+    global _resolved_groq_model
+    if _resolved_groq_model:
+        return _resolved_groq_model
+    configured = os.getenv("GROQ_MODEL")
+    try:
+        response = requests.get("https://api.groq.com/openai/v1/models",
+                                headers={"Authorization": f"Bearer {api_key}"}, timeout=10)
+        response.raise_for_status()
+        available = [m["id"] for m in response.json()["data"] if m.get("active", True)]
+    except (requests.exceptions.RequestException, KeyError, ValueError):
+        return configured or GROQ_PREFERRED_MODELS[0]
+    for model in [configured, *GROQ_PREFERRED_MODELS]:
+        if model and model in available:
+            _resolved_groq_model = model
+            return model
+    chat_models = [m for m in available if not any(word in m for word in _NON_CHAT_MODELS)]
+    _resolved_groq_model = chat_models[0] if chat_models else (configured or GROQ_PREFERRED_MODELS[0])
+    return _resolved_groq_model
+
+
 # Endpoint to answer question
 @app.post("/ask")
 def ask_question(request: AskRequest):
@@ -220,7 +252,7 @@ def ask_question(request: AskRequest):
     # Limit transcript to avoid token limits
     transcript = request.transcript[:MAX_TRANSCRIPT_CHARS]
     payload = {
-        "model": GROQ_MODEL,
+        "model": resolve_groq_model(groq_api_key),
         "messages": [
             {
                 "role": "system",
