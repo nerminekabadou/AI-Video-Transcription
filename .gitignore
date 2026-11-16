@@ -42,3 +42,10 @@ next-env.d.ts
 
 __pycache__/
 *.pyc
+# keep the template
+!.env.example
+
+# python
+.venv/
+venv/
+.pytest_cache/

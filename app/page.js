@@ -3,71 +3,85 @@
 import { useState, useRef } from 'react';
 
 // Custom SVG Icons
-const Upload = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const Upload = ({ className = "w-5 h-5" }) => (
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
     <polyline points="17 8 12 3 7 8"/>
     <line x1="12" y1="3" x2="12" y2="15"/>
   </svg>
 );
 
-const Send = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const Send = ({ className = "w-5 h-5" }) => (
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <line x1="22" y1="2" x2="11" y2="13"/>
     <polygon points="22 2 15 22 11 13 2 9 22 2"/>
   </svg>
 );
 
-const Video = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const Video = ({ className = "w-5 h-5" }) => (
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polygon points="23 7 16 12 23 17 23 7"/>
     <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
   </svg>
 );
 
-const AlertCircle = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const AlertCircle = ({ className = "w-5 h-5" }) => (
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="10"/>
     <line x1="12" y1="8" x2="12" y2="12"/>
     <line x1="12" y1="16" x2="12.01" y2="16"/>
   </svg>
 );
 
-const CheckCircle2 = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const CheckCircle2 = ({ className = "w-5 h-5" }) => (
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="10"/>
     <path d="m9 12 2 2 4-4"/>
   </svg>
 );
 
-const Loader2 = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin">
+const Loader2 = ({ className = "w-5 h-5 animate-spin" }) => (
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
   </svg>
 );
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function Home() {
   const [video, setVideo] = useState(null);
   const [videoPreview, setVideoPreview] = useState(null);
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
-  const [transcriptionId, setTranscriptionId] = useState(null);
+  const [transcript, setTranscript] = useState(null);
   const [uploadStatus, setUploadStatus] = useState('idle'); // idle, uploading, processing, success, error
   const [uploadProgress, setUploadProgress] = useState(0);
   const [askStatus, setAskStatus] = useState('idle');
   const [error, setError] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
+  const selectFile = (file) => {
     if (file) {
+      if (!file.type.startsWith('video/')) {
+        setError('Please choose a video file');
+        return;
+      }
       setVideo(file);
       setVideoPreview(URL.createObjectURL(file));
       setUploadStatus('idle');
-      setTranscriptionId(null);
+      setTranscript(null);
       setAnswer('');
       setError('');
     }
+  };
+
+  const handleFileChange = (e) => selectFile(e.target.files[0]);
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    selectFile(e.dataTransfer.files[0]);
   };
 
   const handleUpload = async () => {
@@ -86,7 +100,7 @@ export default function Home() {
       console.log('Starting video upload...', video.name, `(${(video.size / 1024 / 1024).toFixed(2)} MB)`);
       
       // Upload the file
-      const uploadResponse = await fetch('http://localhost:8000/upload', {
+      const uploadResponse = await fetch(`${API_URL}/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -125,7 +139,7 @@ export default function Home() {
         attempts++;
         console.log(`Polling attempt ${attempts}/${maxAttempts} for job ${jobId}`);
         
-        const response = await fetch(`http://localhost:8000/status/${jobId}`);
+        const response = await fetch(`${API_URL}/status/${jobId}`);
         
         if (!response.ok) {
           throw new Error('Failed to check processing status');
@@ -135,7 +149,7 @@ export default function Home() {
         console.log('Status response:', data);
         
         if (data.status === 'completed') {
-          setTranscriptionId(data.transcriptionId);
+          setTranscript(data.transcript);
           setUploadProgress(100);
           setUploadStatus('success');
           console.log('Processing completed!');
@@ -166,7 +180,7 @@ export default function Home() {
   };
 
   const handleAskQuestion = async () => {
-    if (!transcriptionId) {
+    if (!transcript) {
       setError('Please upload a video first');
       return;
     }
@@ -180,10 +194,10 @@ export default function Home() {
       setAskStatus('loading');
       setError('');
       
-      const response = await fetch('http://localhost:8000/ask', {
+      const response = await fetch(`${API_URL}/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcriptionId, question }),
+        body: JSON.stringify({ transcript, question }),
       });
       
       if (!response.ok) {
@@ -237,7 +251,10 @@ export default function Home() {
               {/* File Input */}
               <div 
                 onClick={() => fileInputRef.current?.click()}
-                className="relative border-2 border-dashed border-purple-400/50 rounded-2xl p-8 text-center cursor-pointer hover:border-purple-400 hover:bg-white/5 transition-all duration-300"
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDrop}
+                className={`relative border-2 border-dashed ${isDragging ? 'border-purple-300 bg-white/10' : 'border-purple-400/50'} rounded-2xl p-8 text-center cursor-pointer hover:border-purple-400 hover:bg-white/5 transition-all duration-300`}
               >
                 <input
                   ref={fileInputRef}

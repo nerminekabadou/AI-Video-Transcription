@@ -1,12 +1,10 @@
-from fastapi import FastAPI, File, UploadFile, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 import os
+import re
 import uuid
 import asyncio
 from typing import Dict
-# import google.cloud.speech as speech
-# from google.cloud import storage
 import requests
 import subprocess
 import tempfile
@@ -14,6 +12,7 @@ import shutil
 import shlex
 import assemblyai as aai
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 
 # Load environment variables
 load_dotenv()
@@ -23,7 +22,7 @@ app = FastAPI()
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -35,60 +34,62 @@ if not assemblyai_api_key:
     raise ValueError("ASSEMBLYAI_API_KEY environment variable is not set")
 aai.settings.api_key = assemblyai_api_key
 
-# Configure Google Cloud Storage
-# bucket_name = "your_bucket_name"
+# Upload limits and temporary storage
+MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "200"))
+MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+CHUNK_SIZE = 1024 * 1024
+UPLOAD_DIR = tempfile.gettempdir()
 
-# Speech-to-text client setup
-# speech_client = speech.SpeechClient()
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+MAX_TRANSCRIPT_CHARS = 4000
+
+
+class AskRequest(BaseModel):
+    transcript: str = Field(min_length=1)
+    question: str = Field(min_length=1)
 
 # Store job status in memory (use Redis or database in production)
 job_status: Dict[str, dict] = {}
 
 # Endpoint to upload video
 @app.post("/upload")
-async def upload_video(file: UploadFile = File(...), background_tasks: BackgroundTasks = None):
-    try:
-        # Validate file type
-        if not file.content_type.startswith('video/'):
-            return JSONResponse(
-                status_code=400,
-                content={"detail": "File must be a video"}
-            )
-        
-        # Generate unique job ID
-        job_id = str(uuid.uuid4())
-        
-        # Save video file temporarily
-        video_file_path = f"./temp_{job_id}_{file.filename}"
-        with open(video_file_path, "wb") as buffer:
-            buffer.write(await file.read())
-        
-        # Initialize job status
-        job_status[job_id] = {
-            "status": "processing",
-            "transcriptionId": None,
-            "error": None
-        }
-        
-        # Process video in background
-        background_tasks.add_task(process_video, job_id, video_file_path)
-        
-        return {"jobId": job_id, "message": "Video upload started"}
-        
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": f"Error uploading video: {str(e)}"}
-        )
+async def upload_video(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    if not (file.content_type or "").startswith("video/"):
+        raise HTTPException(status_code=400, detail="File must be a video")
+
+    job_id = str(uuid.uuid4())
+
+    # Never build paths from the client-supplied file name: keep only a safe extension.
+    extension = os.path.splitext(file.filename or "")[1].lower()
+    if not re.fullmatch(r"\.[a-z0-9]{1,5}", extension):
+        extension = ".video"
+    video_file_path = os.path.join(UPLOAD_DIR, f"video_ai_{job_id}{extension}")
+
+    # Stream the upload to disk in chunks instead of loading it into memory.
+    size = 0
+    with open(video_file_path, "wb") as buffer:
+        while chunk := await file.read(CHUNK_SIZE):
+            size += len(chunk)
+            if size > MAX_UPLOAD_BYTES:
+                break
+            buffer.write(chunk)
+    if size > MAX_UPLOAD_BYTES:
+        os.remove(video_file_path)
+        raise HTTPException(status_code=413, detail=f"Video is larger than {MAX_UPLOAD_MB} MB")
+
+    job_status[job_id] = {"status": "processing", "transcript": None, "error": None}
+    background_tasks.add_task(process_video, job_id, video_file_path)
+
+    return {"jobId": job_id, "message": "Video upload started"}
 
 async def process_video(job_id: str, video_file_path: str):
     audio_file_path = None
     try:
         # Extract audio from video
-        audio_file_path = video_file_path.replace(os.path.splitext(video_file_path)[1], '.wav')
-        
-        # Use ffmpeg to extract audio
-        extract_audio_from_video(video_file_path, audio_file_path)
+        audio_file_path = os.path.splitext(video_file_path)[0] + '.wav'
+
+        # Run the blocking ffmpeg call in a worker thread so the API stays responsive
+        await asyncio.to_thread(extract_audio_from_video, video_file_path, audio_file_path)
         
         # Transcribe audio
         transcription = await asyncio.to_thread(transcribe_audio, audio_file_path)
@@ -96,14 +97,14 @@ async def process_video(job_id: str, video_file_path: str):
         # Update job status
         job_status[job_id] = {
             "status": "completed",
-            "transcriptionId": transcription,
+            "transcript": transcription,
             "error": None
         }
         
     except Exception as e:
         job_status[job_id] = {
             "status": "failed",
-            "transcriptionId": None,
+            "transcript": None,
             "error": str(e)
         }
     
@@ -204,89 +205,55 @@ def transcribe_audio(audio_file_path: str):
 @app.get("/status/{job_id}")
 async def get_status(job_id: str):
     if job_id not in job_status:
-        return JSONResponse(
-            status_code=404,
-            content={"detail": "Job not found"}
-        )
+        raise HTTPException(status_code=404, detail="Job not found")
     
     return job_status[job_id]
 
 # Endpoint to answer question
 @app.post("/ask")
-async def ask_question(data: dict):
+def ask_question(request: AskRequest):
+    groq_api_key = os.getenv("GROQ_API_KEY")
+    if not groq_api_key:
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY environment variable is not set")
+
+    # Limit transcript to avoid token limits
+    transcript = request.transcript[:MAX_TRANSCRIPT_CHARS]
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a helpful assistant that answers questions about video content "
+                           "based on transcripts. Provide clear, concise answers.",
+            },
+            {
+                "role": "user",
+                "content": f"Video Transcript:\n{transcript}\n\nQuestion: {request.question}\n\n"
+                           "Please answer based only on the transcript above.",
+            },
+        ],
+        "max_tokens": 500,
+        "temperature": 0.7,
+    }
+
     try:
-        transcription = data.get('transcriptionId')
-        question = data.get('question')
-
-        if not transcription or not question:
-            return JSONResponse(
-                status_code=400,
-                content={"detail": "Missing transcription or question"}
-            )
-
-        # Use Groq API
-        groq_api_key = os.getenv("GROQ_API_KEY")
-        if not groq_api_key:
-            return JSONResponse(
-                status_code=500,
-                content={"detail": "GROQ_API_KEY environment variable is not set"}
-            )
-        
-        headers = {
-            'Authorization': f'Bearer {groq_api_key}', 
-            'Content-Type': 'application/json'
-        }
-        
-        # Limit transcript to avoid token limits
-        max_transcript_length = 4000
-        truncated_transcript = transcription[:max_transcript_length]
-        
-        payload = {
-            'model': 'llama-3.3-70b-versatile',  # Free and powerful
-            'messages': [
-                {
-                    'role': 'system',
-                    'content': 'You are a helpful assistant that answers questions about video content based on transcripts. Provide clear, concise answers.'
-                },
-                {
-                    'role': 'user',
-                    'content': f"Video Transcript:\n{truncated_transcript}\n\nQuestion: {question}\n\nPlease answer based only on the transcript above."
-                }
-            ],
-            'max_tokens': 500,
-            'temperature': 0.7
-        }
-        
         response = requests.post(
-            'https://api.groq.com/openai/v1/chat/completions',
-            headers=headers,
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {groq_api_key}"},
             json=payload,
-            timeout=30
+            timeout=30,
         )
-
-        print(f"Groq Status: {response.status_code}")
-
-        if response.status_code != 200:
-            print(f"Groq Error: {response.text}")
-            raise Exception(f"Groq API error ({response.status_code}): {response.text}")
-
-        result = response.json()
-        answer = result['choices'][0]['message']['content']
-        
-        return {"answer": answer}
-        
     except requests.exceptions.Timeout:
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Request timed out. Please try again."}
-        )
-    except Exception as e:
-        print(f"Error in ask_question: {str(e)}")
-        return JSONResponse(
-            status_code=500,
-            content={"detail": f"Error: {str(e)}"}
-        )
-    
+        raise HTTPException(status_code=504, detail="Request timed out. Please try again.")
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Could not reach the Groq API: {e}")
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Groq API error ({response.status_code}): {response.text}")
+
+    return {"answer": response.json()["choices"][0]["message"]["content"]}
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)
