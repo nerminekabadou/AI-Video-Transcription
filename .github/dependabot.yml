@@ -11,6 +11,11 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    ignore:
+      # typescript-eslint (used by eslint-config-next) does not support TypeScript 7 yet;
+      # remove this once it does (see typescript-eslint/typescript-eslint#10940).
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-dependencies:
         patterns: ["*"]
