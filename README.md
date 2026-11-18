@@ -65,6 +65,7 @@ cp .env.example .env               # then add your API keys
 | `GROQ_API_KEY` | yes | Groq key for question answering |
 | `GROQ_MODEL` | no | Preferred model. If it isn't set or is no longer available, the backend picks the first model your Groq account can use from a built-in preference list (Groq retires models regularly) |
 | `MAX_UPLOAD_MB` | no | Maximum upload size, default `200` |
+| `NEXT_PUBLIC_MAX_UPLOAD_MB` | no | Build-time limit checked in the browser before uploading, default `200`. Keep in sync with `MAX_UPLOAD_MB`; the server still enforces its own limit |
 | `FRONTEND_ORIGIN` | no | Allowed CORS origin, default `http://localhost:3000` |
 | `FFMPEG_PATH` | no | Path to `ffmpeg` if it isn't on your `PATH` (forward slashes work on Windows, e.g. `C:/ffmpeg/bin/ffmpeg.exe`) |
 | `NEXT_PUBLIC_API_URL` | no | Backend URL used by the frontend, default `http://localhost:8000` |
