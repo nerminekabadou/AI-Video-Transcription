@@ -1,7 +1,9 @@
 name: Claude
 
-# Claude works on an issue or PR when I comment "@claude ..." on it.
-# Only my own comments trigger it (public repo: nobody else can start a run).
+# Claude works on an issue or PR when I comment "@claude ..." on it (the monthly
+# backlog workflow does this automatically for new backlog issues). Only my own
+# comments trigger it, so nobody else can start a run on this public repo.
+# When Claude pushed a branch for an issue, a pull request is opened in my name.
 on:
   issue_comment:
     types: [created]
@@ -14,7 +16,7 @@ jobs:
       contains(github.event.comment.body, '@claude') &&
       github.event.comment.user.login == 'nerminekabadou'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     permissions:
       contents: write
       pull-requests: write
@@ -38,4 +40,23 @@ jobs:
           # Only the tools needed to change code and verify it with the project's own checks.
           claude_args: >-
             --max-turns 40
-            --allowedTools "Read,Glob,Grep,Edit,Bash(npm ci),Bash(npm run lint),Bash(npm run build),Bash(pip install -r requirements-dev.txt),Bash(pytest:*),Bash(git status),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git checkout:*)"
+            --allowedTools "Read,Glob,Grep,Edit,Bash(git status),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git checkout:*),Bash(npm ci),Bash(npm run lint),Bash(npm run build),Bash(pip install -r requirements-dev.txt),Bash(pytest:*)"
+      - name: Open a pull request for the work
+        if: success() && github.event.issue.pull_request == null
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+          ISSUE: ${{ github.event.issue.number }}
+          TITLE: ${{ github.event.issue.title }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          branch=$(gh api "repos/$GITHUB_REPOSITORY/branches?per_page=100" \
+                   --jq "[.[].name | select(startswith(\"claude/issue-$ISSUE-\"))] | sort | last // empty")
+          if [ -z "$branch" ]; then echo "Claude did not push a branch."; exit 0; fi
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY/compare/$BASE...$branch" --jq .ahead_by)" = "0" ]; then
+            echo "Branch $branch has no new commits."; exit 0
+          fi
+          if [ -n "$(gh pr list -R "$GITHUB_REPOSITORY" --head "$branch" --json number --jq '.[0].number // empty')" ]; then
+            echo "A pull request already exists for $branch."; exit 0
+          fi
+          printf 'Closes #%s\n\nImplemented by Claude Code; checks: `npm run lint`, `npm run build` and `pytest`. Merges after my approval.\n' "$ISSUE" > body.md
+          gh pr create -R "$GITHUB_REPOSITORY" --base "$BASE" --head "$branch" --title "$TITLE" --body-file body.md
