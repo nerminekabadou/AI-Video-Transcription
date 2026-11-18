@@ -24,14 +24,14 @@ jobs:
       id-token: write
       actions: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - uses: anthropics/claude-code-action@v1
@@ -40,7 +40,7 @@ jobs:
           # Only the tools needed to change code and verify it with the project's own checks.
           claude_args: >-
             --max-turns 40
-            --allowedTools "Read,Glob,Grep,Edit,Bash(git status),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git checkout:*),Bash(npm ci),Bash(npm run lint),Bash(npm run build),Bash(pip install -r requirements-dev.txt),Bash(pytest:*)"
+            --allowedTools "Read,Glob,Grep,Edit,Bash(git status),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git checkout:*),Bash(npm ci),Bash(npm run lint),Bash(npm run build),Bash(npm install:*),Bash(npm update:*),Bash(npm audit:*),Bash(npm ls:*),Bash(pip install -r requirements-dev.txt),Bash(pytest:*)"
       - name: Open a pull request for the work
         if: success() && github.event.issue.pull_request == null
         env:
