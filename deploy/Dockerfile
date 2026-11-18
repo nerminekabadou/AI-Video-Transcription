@@ -5,7 +5,7 @@ WORKDIR /src
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-ENV NEXT_OUTPUT=export NEXT_PUBLIC_API_URL="" NEXT_PUBLIC_SAMPLE_VIDEO=/samples/MachineLearning.mp4
+ENV NEXT_OUTPUT=export NEXT_PUBLIC_API_URL="" NEXT_PUBLIC_MAX_UPLOAD_MB=25 NEXT_PUBLIC_SAMPLE_VIDEO=/samples/MachineLearning.mp4
 RUN npm run build
 
 FROM python:3.12-slim

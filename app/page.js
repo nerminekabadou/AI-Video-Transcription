@@ -48,6 +48,9 @@ const Loader2 = ({ className = "w-5 h-5 animate-spin" }) => (
 
 // An empty NEXT_PUBLIC_API_URL means "same origin" (used by the live demo build).
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+// Browser-side size check, for user experience only; the backend enforces MAX_UPLOAD_MB.
+const parsedMaxMb = Number(process.env.NEXT_PUBLIC_MAX_UPLOAD_MB);
+const MAX_UPLOAD_MB = parsedMaxMb > 0 ? parsedMaxMb : 200;
 const SAMPLE_VIDEO = process.env.NEXT_PUBLIC_SAMPLE_VIDEO;
 
 export default function Home() {
@@ -69,6 +72,10 @@ export default function Home() {
         setError('Please choose a video file');
         return;
       }
+      if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+        setError(`Video is larger than ${MAX_UPLOAD_MB} MB (yours is ${(file.size / 1024 / 1024).toFixed(1)} MB)`);
+        return;
+      }
       setVideo(file);
       setVideoPreview(URL.createObjectURL(file));
       setUploadStatus('idle');
@@ -78,7 +85,10 @@ export default function Home() {
     }
   };
 
-  const handleFileChange = (e) => selectFile(e.target.files[0]);
+  const handleFileChange = (e) => {
+    selectFile(e.target.files[0]);
+    e.target.value = ''; // allow re-selecting the same file after a rejection
+  };
 
   const handleDrop = (e) => {
     e.preventDefault();
@@ -289,7 +299,7 @@ export default function Home() {
                     <Video className="w-12 h-12 text-purple-400 mx-auto" />
                     <p className="text-white font-medium">Click to select a video</p>
                     <p className="text-sm text-slate-400">
-                      or drag and drop your video here
+                      or drag and drop your video here (max {MAX_UPLOAD_MB} MB)
                     </p>
                   </div>
                 )}
